@@ -36,6 +36,7 @@ type Server struct {
 	rooms        map[string]*room
 	oauth        oauth2.Config
 	verifier     *oidc.IDTokenVerifier
+	httpClient   *http.Client
 	now          func() time.Time
 }
 
@@ -43,11 +44,13 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	ctx = oidc.ClientContext(ctx, client)
 	provider, err := oidc.NewProvider(ctx, cfg.Issuer)
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, sessions: map[string]*session{}, transactions: map[string]transaction{}, rooms: map[string]*room{}, now: time.Now}
+	s := &Server{cfg: cfg, sessions: map[string]*session{}, transactions: map[string]transaction{}, rooms: map[string]*room{}, now: time.Now, httpClient: client}
 	s.oauth = oauth2.Config{ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret, RedirectURL: cfg.Origin + "/auth/callback", Endpoint: provider.Endpoint(), Scopes: []string{oidc.ScopeOpenID, "profile"}}
 	s.verifier = provider.Verifier(&oidc.Config{ClientID: cfg.ClientID, SupportedSigningAlgs: []string{"RS256", "ES256"}})
 	return s, nil

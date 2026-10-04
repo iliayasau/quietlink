@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/subtle"
 	"net/http"
 	"strings"
@@ -53,7 +54,10 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "Sign-in expired or was not valid. Start again.")
 		return
 	}
-	token, err := s.oauth.Exchange(r.Context(), r.URL.Query().Get("code"), oauth2.VerifierOption(tx.Verifier))
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	ctx = oidc.ClientContext(ctx, s.httpClient)
+	token, err := s.oauth.Exchange(ctx, r.URL.Query().Get("code"), oauth2.VerifierOption(tx.Verifier))
 	if err != nil {
 		fail(w, 401, "The identity provider could not complete sign-in.")
 		return
@@ -63,7 +67,7 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 		fail(w, 401, "The identity provider did not return an identity.")
 		return
 	}
-	id, err := s.verifier.Verify(r.Context(), raw)
+	id, err := s.verifier.Verify(ctx, raw)
 	if err != nil || !equal(id.Nonce, tx.Nonce) || id.Subject == "" {
 		fail(w, 401, "Identity verification failed.")
 		return
