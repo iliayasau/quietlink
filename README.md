@@ -1,18 +1,61 @@
 # QuietLink
 
-Private, invitation-only video calls for two people. Go handles identity, room access and signaling; browsers exchange media using WebRTC.
+**A room for two.** Invitation-only video calls with OIDC identity, explicit host approval and browser-to-browser WebRTC media.
 
-## Project status
+![QuietLink desktop](docs/screenshots/landing-1440.png)
 
-In development. Verification results and runnable setup will be recorded as implementation progresses. No public deployment or real identity-provider configuration is included.
+## What it does
 
-## Design
+- Sign in through one configured OpenID Connect provider using authorization code flow, PKCE, state and nonce.
+- Preview camera and microphone before entering a room.
+- Share an expiring, single-use invitation. The host accepts or declines the guest; room admission is atomically limited to two participants.
+- Exchange video and audio directly between browsers, with optional configured TURN fallback.
+- Mute, toggle camera, reconnect and leave. Leaving stops local media tracks; host departure closes the room.
+- Use a responsive interface with keyboard controls, named controls, live connection status and tested contrast.
 
-- One configured OIDC issuer; authorization code flow with PKCE, state and nonce.
-- Opaque server-side sessions, same-origin requests and CSRF checks.
-- Expiring, single-use invitations and explicit host approval; at most two admitted identities.
-- Camera preview, microphone and camera controls, connection feedback and hangup.
-- Standard browser DTLS-SRTP media encryption. Signaling and the web origin remain trusted. OIDC login does not independently bind identities to media fingerprints.
-- Optional TURN configuration for networks that cannot connect directly.
+Go `net/http` owns authentication, opaque sessions, room access and WebSocket signaling. React and TypeScript own the browser interface and WebRTC lifecycle. There is no SFU, recording feature or custom cryptography.
 
-No recording, group calls, SFU or custom cryptography. The Go server is not a media endpoint.
+## Run locally
+
+Requirements: Go **1.27.1+**, Node.js **24+**, npm.
+
+```sh
+npm ci
+npm run build
+npm run dev
+```
+
+Open **http://127.0.0.1:8080** in two separate browser profiles. Sign in as Avery and Jordan through the local test identity provider. Enable devices, create a room, share its invitation, request entry and accept the guest. Set `GO_BIN` to your Go executable path if it is not on PATH.
+
+The local provider runs separately on loopback port 9090 and visibly labels its test identities. It does not authenticate real accounts. The production configuration rejects its reserved client ID. No external accounts, OAuth credentials or public deployment are included.
+
+For a real provider, HTTPS deployment and TURN configuration, see [operations](docs/operations.md). Environment variables are listed in [.env.example](.env.example); they are not automatically loaded from a file.
+
+## Security and limits
+
+Media uses standard browser DTLS-SRTP encryption between peers, including when TURN relays packets. The Go server does not terminate media. The web origin, signaling service and identity provider remain trusted; OIDC login does not independently bind identities to media fingerprints. Peers may learn each other's IP addresses, and participants can record using external tools.
+
+Sessions, rooms and invitations live in process memory. Run one instance; restart clears state. Sessions last eight hours, rooms two hours and invitations ten minutes. A new invitation invalidates the previous link. Signaling has membership checks, exact Origin checks, bounded queues, size/rate limits and negotiation generations that discard stale reconnect messages. HTTP mutations also require a session CSRF token.
+
+There is no default external STUN/TURN service. Restricted networks may need an operator-configured relay, with network access and bandwidth costs. Real-provider and cross-network TURN checks have not been performed. Read the full [trust model](docs/security.md) and [architecture decisions](docs/architecture.md).
+
+## Verification
+
+```sh
+go vet ./cmd/... ./internal/...
+go test ./cmd/... ./internal/...
+go test -race ./cmd/... ./internal/...
+npm run lint
+npm run typecheck
+npm run build
+npx playwright install chromium
+npm run test:e2e
+```
+
+Local Windows verification: nine Go tests plus five OIDC subcases, `go vet`, frontend lint/types/build and six Playwright tests passed. Browser tests use the real Go backend and local OIDC provider with two isolated browser contexts and fake media. They verify received video, admission, reconnect, media controls, stopped tracks on leave, rejected/replayed invitations, responsive layouts and automated accessibility checks. Automated checks are not a substitute for manual assistive-technology testing.
+
+The [CI workflow](.github/workflows/ci.yml) runs the race detector on Linux, where a C toolchain is available. Local Windows race execution requires a separately installed C compiler. The latest repository check result is the source of truth for CI status.
+
+![Local two-browser test call using synthetic camera input](docs/screenshots/call-desktop.png)
+
+The call screenshot uses Chromium's synthetic camera input; it is a local test, not a real-device or cross-network demonstration.
