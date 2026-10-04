@@ -6,6 +6,8 @@ Identity is the pair (issuer, subject), never email. OAuth transactions last fiv
 
 Room mutation and admission occur under one mutex. Each room has one host and at most one guest. Invitations expire after ten minutes and are consumed on a join request. Approval is separate from requesting entry; a pending guest cannot signal. Rejecting or leaving requires a new invitation. A host leaving closes the room. Room lifetime is two hours and process restart clears all state.
 
+The authenticated session snapshot includes only that session's current room, including pending admission. The browser uses this authoritative snapshot on refresh and after uncertain create/join outcomes. Lost responses do not require replaying invitation tokens or bypassing approval. A host whose invitation response was lost can explicitly issue a fresh invitation; plaintext tokens are not retained for recovery. Transport failures and 5xx responses retain the browser's saved room reference and offer a retry; only confirmed session expiry, room termination or an authenticated empty snapshot clears it.
+
 Signaling is authenticated at handshake and on every message. Exact Origin checks precede upgrades. A bounded outgoing queue, message size limits, per-connection rate limit and timed writes prevent unbounded buffering. Messages are limited to offer, answer, candidate and ready. SDP and tokens are never logged.
 
 The host initiates offers. A guest sends ready after installing handlers. Reconnecting closes the old connection and repeats negotiation. There is one active signaling socket per session per room; a duplicate connection is rejected so another tab cannot repeatedly interrupt a healthy call. Session revocation closes matching sockets and removes room access.

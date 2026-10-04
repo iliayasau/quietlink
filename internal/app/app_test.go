@@ -218,6 +218,58 @@ func TestSessionAndRoomExpiry(t *testing.T) {
 	}
 }
 
+func TestCurrentRoomRecoveryIsSessionScoped(t *testing.T) {
+	s := testServer()
+	host, guest, other := s.testUser("host"), s.testUser("guest"), s.testUser("other")
+	shadow := s.testUser("host") // Same OIDC identity, different session.
+	id, token := create(t, s, host)
+	read := func(ss *session) map[string]any {
+		t.Helper()
+		w := request(s, ss, "GET", "/api/me", nil)
+		if w.Code != 200 {
+			t.Fatal(w.Code)
+		}
+		var payload struct {
+			CurrentRoom map[string]any `json:"currentRoom"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload.CurrentRoom
+	}
+	if rm := read(host); rm["id"] != id || rm["role"] != "host" {
+		t.Fatal("host room not recovered", rm)
+	}
+	if read(other) != nil || read(shadow) != nil {
+		t.Fatal("room leaked to a different session")
+	}
+	if w := join(s, guest, id, token); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	if rm := read(guest); rm["id"] != id || rm["status"] != "waiting" {
+		t.Fatal("pending membership was not preserved", rm)
+	}
+	if request(s, host, "POST", "/api/rooms/"+id+"/approve", nil).Code != 200 {
+		t.Fatal("approval failed")
+	}
+	if rm := read(guest); rm["status"] != "admitted" {
+		t.Fatal("admitted membership not recovered", rm)
+	}
+	if request(s, guest, "POST", "/api/rooms/"+id+"/leave", nil).Code != 200 {
+		t.Fatal("leave failed")
+	}
+	if read(guest) != nil {
+		t.Fatal("left room retained")
+	}
+	s.rooms[id].Expires = time.Now().Add(-time.Second)
+	if read(host) != nil {
+		t.Fatal("expired room recovered")
+	}
+	if request(s, nil, "GET", "/api/me", nil).Code != 401 {
+		t.Fatal("anonymous snapshot permitted")
+	}
+}
+
 func TestWebSocketAuthorizationRelayAndRevocation(t *testing.T) {
 	s := testServer()
 	host, guest, third := s.testUser("host"), s.testUser("guest"), s.testUser("third")

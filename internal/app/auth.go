@@ -125,7 +125,14 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	if ss == nil {
 		return
 	}
-	reply(w, 200, map[string]any{"name": ss.Name, "csrf": ss.CSRF, "iceServers": s.cfg.ICE, "development": s.cfg.Development})
+	var currentRoom any
+	for _, rm := range s.rooms {
+		if rm.member(ss) != nil || (rm.Pending != nil && rm.Pending.Session == ss.ID) {
+			currentRoom = s.view(rm, ss)
+			break
+		}
+	}
+	reply(w, 200, map[string]any{"name": ss.Name, "csrf": ss.CSRF, "iceServers": s.cfg.ICE, "development": s.cfg.Development, "currentRoom": currentRoom})
 }
 
 func (s *Server) revoke(id string) {

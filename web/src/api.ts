@@ -3,6 +3,7 @@ export type Account = {
   csrf: string;
   iceServers: RTCIceServer[] | null;
   development: boolean;
+  currentRoom: Room | null;
 };
 export type Room = {
   id: string;

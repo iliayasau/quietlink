@@ -52,7 +52,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Local Windows verification: nine Go tests plus five OIDC subcases, `go vet`, frontend lint/types/build and six Playwright tests passed. Browser tests use the real Go backend and local OIDC provider with two isolated browser contexts and fake media. They verify received video, admission, reconnect, media controls, stopped tracks on leave, rejected/replayed invitations, responsive layouts and automated accessibility checks. Automated checks are not a substitute for manual assistive-technology testing.
+The suite contains ten Go tests plus five OIDC subcases and twelve Playwright tests. Browser tests use the real Go backend and local OIDC provider with isolated browser contexts and fake media. They verify received video, admission, reconnect, media controls, stopped tracks on leave, rejected/replayed invitations, responsive layouts and automated accessibility checks. Recovery regressions discard real create/join responses after the server commits, then verify retry and refresh; transient restoration failures preserve the saved room. Automated checks are not a substitute for manual assistive-technology testing.
 
 The [CI workflow](.github/workflows/ci.yml) runs the race detector on Linux, where a C toolchain is available. Local Windows race execution requires a separately installed C compiler. The latest repository check result is the source of truth for CI status.
 

@@ -48,6 +48,7 @@ function VideoFeed({
 export function App() {
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
+  const [restoreFailed, setRestoreFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -94,28 +95,74 @@ export function App() {
 
   useEffect(() => {
     mounted.current = true;
-    void api<Account>("/api/me")
-      .then(async (me) => {
-        setAccount(me);
-        const saved = sessionStorage.getItem("ql_room");
-        if (saved) {
-          try {
-            setRoom(await api<Room>(`/api/rooms/${saved}`));
-          } catch {
-            sessionStorage.removeItem("ql_room");
-          }
-        }
-      })
-      .catch((e) => {
-        if (!(e instanceof APIError && e.status === 401))
-          setError("QuietLink could not be reached. Refresh to try again.");
-      })
-      .finally(() => setLoading(false));
+    void loadAccount();
     return () => {
       mounted.current = false;
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
+
+  function restoreRoom(value: Room) {
+    remember(value);
+    if (
+      value.role === "guest" &&
+      sessionStorage.getItem("ql_invite")?.startsWith(`${value.id}.`)
+    ) {
+      sessionStorage.removeItem("ql_invite");
+      setIncoming("");
+    }
+  }
+
+  async function loadAccount() {
+    setLoading(true);
+    setRestoreFailed(false);
+    setError("");
+    try {
+      const me = await api<Account>("/api/me");
+      if (!mounted.current) return;
+      setAccount(me);
+      if (me.currentRoom) restoreRoom(me.currentRoom);
+      else clearRoom(); // An authenticated server snapshot confirms no membership.
+    } catch (e) {
+      if (!mounted.current) return;
+      if (e instanceof APIError && e.status === 401) {
+        setAccount(null);
+        clearRoom();
+      } else {
+        // A timeout or server error is not evidence that the room has ended.
+        setRestoreFailed(true);
+        setError(
+          "QuietLink could not restore your session. Your saved room has been kept. Try again.",
+        );
+      }
+    } finally {
+      if (mounted.current) setLoading(false);
+    }
+  }
+
+  async function recoverMembership() {
+    let me: Account;
+    try {
+      me = await api<Account>("/api/me");
+    } catch (e) {
+      if (e instanceof APIError && e.status === 401) throw e;
+      throw new Error(
+        "Your request may have reached the server. Try again or refresh to recover your room when the connection is back.",
+        { cause: e },
+      );
+    }
+    if (!me.currentRoom) return false;
+    setAccount(me);
+    restoreRoom(me.currentRoom);
+    setNotice(
+      me.currentRoom.role === "host"
+        ? "Your room was restored. Create a new invitation to share it."
+        : me.currentRoom.status === "waiting"
+          ? "Your room request was restored. Host approval is still required before joining."
+          : "Your admitted room was restored.",
+    );
+    return true;
+  }
 
   useEffect(() => {
     if (!room) return;
@@ -208,13 +255,18 @@ export function App() {
   async function createRoom() {
     if (!account) return;
     await run(async () => {
-      const result = await api<{ room: Room; invite: string }>(
-        "/api/rooms",
-        account.csrf,
-        {},
-      );
-      remember(result.room);
-      setInvite(`${location.origin}/#invite=${result.invite}`);
+      try {
+        const result = await api<{ room: Room; invite: string }>(
+          "/api/rooms",
+          account.csrf,
+          {},
+        );
+        remember(result.room);
+        setInvite(`${location.origin}/#invite=${result.invite}`);
+      } catch (e) {
+        if (await recoverMembership()) return;
+        throw e;
+      }
     });
   }
   async function joinRoom() {
@@ -225,14 +277,19 @@ export function App() {
         throw new Error(
           "This invitation is incomplete. Ask your host for a new link.",
         );
-      remember(
-        await api<Room>("/api/join", account.csrf, {
-          room: parts[0],
-          token: parts[1],
-        }),
-      );
-      sessionStorage.removeItem("ql_invite");
-      setIncoming("");
+      try {
+        remember(
+          await api<Room>("/api/join", account.csrf, {
+            room: parts[0],
+            token: parts[1],
+          }),
+        );
+        sessionStorage.removeItem("ql_invite");
+        setIncoming("");
+      } catch (e) {
+        if (await recoverMembership()) return;
+        throw e;
+      }
     });
   }
   async function action(name: string) {
@@ -450,6 +507,20 @@ export function App() {
               <>
                 <h2>Getting your space ready…</h2>
                 <p>Please wait a moment.</p>
+              </>
+            ) : restoreFailed ? (
+              <>
+                <h2>Let’s reconnect.</h2>
+                <p>
+                  We could not check your room. Try again when your connection
+                  is back.
+                </p>
+                <button
+                  className="primary-button"
+                  onClick={() => void loadAccount()}
+                >
+                  Try again <RefreshCw size={18} />
+                </button>
               </>
             ) : !account ? (
               <>
