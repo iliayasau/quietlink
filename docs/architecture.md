@@ -8,7 +8,7 @@ Room mutation and admission occur under one mutex. Each room has one host and at
 
 Signaling is authenticated at handshake and on every message. Exact Origin checks precede upgrades. A bounded outgoing queue, message size limits, per-connection rate limit and timed writes prevent unbounded buffering. Messages are limited to offer, answer, candidate and ready. SDP and tokens are never logged.
 
-The host initiates offers. A guest sends ready after installing handlers. Reconnecting replaces the old connection, closes the old peer connection and repeats negotiation. There is one active signaling socket per identity per room. Session revocation closes matching sockets and removes room access.
+The host initiates offers. A guest sends ready after installing handlers. Reconnecting closes the old connection and repeats negotiation. There is one active signaling socket per session per room; a duplicate connection is rejected so another tab cannot repeatedly interrupt a healthy call. Session revocation closes matching sockets and removes room access.
 
 The development identity provider is a separate loopback-only process. It exercises discovery, authorization, code exchange, PKCE and signed ID tokens. It offers named test identities, not actual account authentication, and cannot be used with production configuration.
 
