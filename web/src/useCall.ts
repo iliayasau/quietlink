@@ -97,7 +97,7 @@ export function useCall(
       } else if (message.epoch !== epoch) {
         return;
       } else if (message.type === "ready" && room.role === "host" && !pc) {
-        const current = create();
+        const current = (pc = create());
         const offer = await current.createOffer();
         if (pc !== current) return;
         await current.setLocalDescription(offer);
