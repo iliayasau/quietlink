@@ -16,6 +16,6 @@ process.on('SIGINT', () => process.exit(0));
 process.on('SIGTERM', () => process.exit(0));
 start('devissuer');
 let ready = false;
-for (let n = 0; n < 50; n++) { try { const response = await fetch(`${env.OIDC_ISSUER}/.well-known/openid-configuration`); if (response.ok) { ready = true; break; } } catch {} await new Promise(resolve => setTimeout(resolve, 100)); }
+for (let n = 0; n < 50; n++) { try { const response = await fetch(`${env.OIDC_ISSUER}/.well-known/openid-configuration`); if (response.ok) { ready = true; break; } } catch { /* Retry while the fixture starts. */ } await new Promise(resolve => setTimeout(resolve, 100)); }
 if (!ready) process.exit(1);
 start('quietlink');
