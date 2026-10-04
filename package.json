@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --config web/vite.config.ts",
+    "dev": "node tests/start.mjs",
     "build": "tsc --noEmit && vite build --config web/vite.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint web tests playwright.config.ts",
@@ -26,6 +26,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "eslint": "^10.12.0",
+    "prettier": "^3.9.9",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.0",
     "vite": "^8.3.2"
