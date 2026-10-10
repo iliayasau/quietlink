@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build --config web/vite.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint web tests playwright.config.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "screenshots": "playwright test --config tests/docs.config.ts"
   },
   "dependencies": {
     "@fontsource/dm-sans": "^5.3.0",

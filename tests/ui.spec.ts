@@ -23,7 +23,7 @@ for (const width of [1440, 768, 390]) {
       .analyze();
     expect(results.violations).toEqual([]);
     await page.screenshot({
-      path: `docs/screenshots/landing-${width}.png`,
+      path: test.info().outputPath(`landing-${width}.png`),
       fullPage: true,
     });
   });

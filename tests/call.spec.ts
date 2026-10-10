@@ -111,7 +111,7 @@ test("two identities complete OIDC, approval, media, controls and hangup", async
       )
       .toBeGreaterThan(0);
     await page.screenshot({
-      path: "docs/screenshots/call-desktop.png",
+      path: test.info().outputPath("call-desktop.png"),
       fullPage: true,
     });
     const accessibility = await new AxeBuilder({ page })

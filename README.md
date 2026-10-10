@@ -2,7 +2,11 @@
 
 **A room for two.** Invitation-only video calls with OIDC identity, explicit host approval and browser-to-browser WebRTC media.
 
-![QuietLink desktop](docs/screenshots/landing-1440.png)
+![QuietLink desktop call with two fictional, AI-generated adult demo participants](docs/screenshots/call-desktop.png)
+
+Synthetic demo participants: the portraits were generated with OpenAI imagegen.
+This is the real QuietLink interface captured during a staged local browser-to-browser call,
+not a real-device or cross-network demonstration. [Sources and reproduction](docs/screenshots/README.md).
 
 ## What it does
 
@@ -58,9 +62,12 @@ The suite covers Go authentication, quotas, cookie ambiguity, room access and si
 
 The [CI workflow](.github/workflows/ci.yml) runs the race detector on Linux, where a C toolchain is available. Local Windows race execution requires a separately installed C compiler. The latest repository check result is the source of truth for CI status.
 
-![Local two-browser test call using synthetic camera input](docs/screenshots/call-desktop.png)
+<img src="docs/screenshots/call-mobile.png" width="390" alt="QuietLink mobile call with fictional, AI-generated adult demo participants">
 
-The call screenshot uses Chromium's synthetic camera input; it is a local test, not a real-device or cross-network demonstration.
+The [tablet view](docs/screenshots/call-tablet.png) and mobile view show the same
+staged local call with static generated portraits streamed over WebRTC.
+Run `npm run screenshots` after building to regenerate the documentation images.
+Ordinary tests save diagnostic screenshots in their test output, preserving these documentation assets.
 
 ## Publication status
 
