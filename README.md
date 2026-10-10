@@ -2,7 +2,7 @@
 
 **A room for two.** Invitation-only video calls with OIDC identity, explicit host approval and browser-to-browser WebRTC media.
 
-![QuietLink desktop call with two fictional, AI-generated adult demo participants](docs/screenshots/call-desktop.png?v=20261010-conversation)
+![QuietLink desktop call with two fictional, AI-generated adult demo participants](https://raw.githubusercontent.com/iliayasau/quietlink/0ae6bd24b105c6b3b261c26beefcafe7dc061926/docs/screenshots/call-desktop.png)
 
 Synthetic demo participants: the portraits were generated with OpenAI imagegen.
 This is the real QuietLink interface captured during a staged local browser-to-browser call,
