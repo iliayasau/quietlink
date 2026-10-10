@@ -4,6 +4,16 @@ test.skip(
   !!process.env.UI_ONLY,
   "Requires the real Go server and local OIDC provider",
 );
+test.afterEach(async ({ page }) => {
+  const response = await page.request.get("/api/me");
+  if (response.ok()) {
+    const me = await response.json();
+    await page.request.post("/api/logout", {
+      headers: { Origin: new URL(page.url()).origin, "X-CSRF-Token": me.csrf },
+      data: {},
+    });
+  }
+});
 async function login(page: Page, name: string) {
   await page.goto("/");
   await page.getByRole("link", { name: "Sign in to continue" }).click();
@@ -137,6 +147,14 @@ test("two identities complete OIDC, approval, media, controls and hangup", async
       page.getByRole("link", { name: "Sign in to continue" }),
     ).toBeVisible();
   } finally {
+    const response = await guest.page.request.get("/api/me");
+    if (response.ok()) {
+      const me = await response.json();
+      await guest.page.request.post("/api/logout", {
+        headers: { Origin: baseURL!, "X-CSRF-Token": me.csrf },
+        data: {},
+      });
+    }
     await guest.context.close();
   }
 });
@@ -167,6 +185,14 @@ test("declined guest loses room access and used invitation cannot be replayed", 
     await guest.page.getByRole("button", { name: "Request to join" }).click();
     await expect(guest.page.getByRole("alert")).toContainText("already used");
   } finally {
+    const response = await guest.page.request.get("/api/me");
+    if (response.ok()) {
+      const me = await response.json();
+      await guest.page.request.post("/api/logout", {
+        headers: { Origin: baseURL!, "X-CSRF-Token": me.csrf },
+        data: {},
+      });
+    }
     await guest.context.close();
   }
 });

@@ -17,7 +17,7 @@ Go `net/http` owns authentication, opaque sessions, room access and WebSocket si
 
 ## Run locally
 
-Requirements: Go **1.27.1+**, Node.js **24+**, npm.
+Requirements: Go **1.27.2+**, Node.js **24+**, npm.
 
 ```sh
 npm ci
@@ -37,6 +37,8 @@ Media uses standard browser DTLS-SRTP encryption between peers, including when T
 
 Sessions, rooms and invitations live in process memory. Run one instance; restart clears state. Sessions last eight hours, rooms two hours and invitations ten minutes. A new invitation invalidates the previous link. Signaling has membership checks, exact Origin checks, bounded queues, size/rate limits and negotiation generations that discard stale reconnect messages. HTTP mutations also require a session CSRF token.
 
+Each OIDC identity may hold up to five sessions and occupy one room (including pending admission). Login starts are limited to 60 per five-minute window per transport IP or IPv6 /64. Behind a reverse proxy this quota is shared by clients using that proxy; forwarded headers are deliberately not trusted. HTTPS uses `__Host-` session and login cookies; upgrading from older cookie names requires signing in again.
+
 There is no default external STUN/TURN service. Restricted networks may need an operator-configured relay, with network access and bandwidth costs. Real-provider and cross-network TURN checks have not been performed. Read the full [trust model](docs/security.md) and [architecture decisions](docs/architecture.md).
 
 ## Verification
@@ -52,10 +54,14 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The suite contains ten Go tests plus five OIDC subcases and twelve Playwright tests. Browser tests use the real Go backend and local OIDC provider with isolated browser contexts and fake media. They verify received video, admission, reconnect, media controls, stopped tracks on leave, rejected/replayed invitations, responsive layouts and automated accessibility checks. Recovery regressions discard real create/join responses after the server commits, then verify retry and refresh; transient restoration failures preserve the saved room. Automated checks are not a substitute for manual assistive-technology testing.
+The suite covers Go authentication, quotas, cookie ambiguity, room access and signaling, plus seventeen Playwright tests. Call and recovery browser tests use the real Go backend and local OIDC provider with isolated browser contexts and fake media. They verify received video, admission, reconnect, media controls, stopped tracks on leave, rejected/replayed invitations, responsive layouts and automated accessibility checks. Recovery regressions discard real create/join responses after the server commits, then verify retry and refresh; transient restoration failures preserve the saved room. Five lifecycle regressions use controlled browser API and HTTP doubles to delay camera permission and negotiation across room/session termination, socket close, reset and queue overflow. Automated checks are not a substitute for manual assistive-technology testing.
 
 The [CI workflow](.github/workflows/ci.yml) runs the race detector on Linux, where a C toolchain is available. Local Windows race execution requires a separately installed C compiler. The latest repository check result is the source of truth for CI status.
 
 ![Local two-browser test call using synthetic camera input](docs/screenshots/call-desktop.png)
 
 The call screenshot uses Chromium's synthetic camera input; it is a local test, not a real-device or cross-network demonstration.
+
+## Publication status
+
+Source checks and a production deployment are separate milestones. See the [release checklist](docs/release.md) for remaining decisions. No project license has been selected; repository visibility alone does not grant an open-source license.

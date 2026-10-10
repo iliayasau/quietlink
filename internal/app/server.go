@@ -28,11 +28,16 @@ type transaction struct {
 	State, Nonce, Verifier string
 	Expires                time.Time
 }
+type loginLimit struct {
+	Count   int
+	Expires time.Time
+}
 type Server struct {
 	cfg          Config
 	mu           sync.Mutex
 	sessions     map[string]*session
 	transactions map[string]transaction
+	loginLimits  map[string]loginLimit
 	rooms        map[string]*room
 	oauth        oauth2.Config
 	verifier     *oidc.IDTokenVerifier
@@ -131,6 +136,11 @@ func decode(w http.ResponseWriter, r *http.Request, target any) bool {
 // All callers hold mu. Cleanup bounds expired state and revokes active room access.
 func (s *Server) clean() {
 	now := s.now()
+	for key, limit := range s.loginLimits {
+		if !limit.Expires.After(now) {
+			delete(s.loginLimits, key)
+		}
+	}
 	for key, tx := range s.transactions {
 		if !tx.Expires.After(now) {
 			delete(s.transactions, key)

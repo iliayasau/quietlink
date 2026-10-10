@@ -4,6 +4,16 @@ test.skip(
   !!process.env.UI_ONLY,
   "Requires the Go server and local OIDC provider",
 );
+test.afterEach(async ({ page, baseURL }) => {
+  const response = await page.request.get("/api/me");
+  if (response.ok()) {
+    const me = await response.json();
+    await page.request.post("/api/logout", {
+      headers: { Origin: baseURL!, "X-CSRF-Token": me.csrf },
+      data: {},
+    });
+  }
+});
 async function login(page: Page, name: string) {
   await page.goto("/");
   await page.getByRole("link", { name: "Sign in to continue" }).click();
@@ -161,6 +171,14 @@ for (const recovery of ["retry", "refresh"] as const) {
         page.getByRole("button", { name: "Accept", exact: true }),
       ).toHaveCount(0);
     } finally {
+      const response = await guest.request.get("/api/me");
+      if (response.ok()) {
+        const me = await response.json();
+        await guest.request.post("/api/logout", {
+          headers: { Origin: baseURL!, "X-CSRF-Token": me.csrf },
+          data: {},
+        });
+      }
       await context.close();
     }
   });

@@ -12,6 +12,8 @@ Signaling is authenticated at handshake and on every message. Exact Origin check
 
 The host initiates offers. A guest sends ready after installing handlers. Reconnecting closes the old connection and repeats negotiation. There is one active signaling socket per session per room; a duplicate connection is rejected so another tab cannot repeatedly interrupt a healthy call. Session revocation closes matching sockets and removes room access.
 
+Client signaling uses a bounded per-socket queue and checks both socket generation and negotiation epoch after asynchronous work. A reset immediately invalidates old work and clears queued messages, even during a pending browser negotiation call. A closed socket cannot create a later peer through a queued offer. Camera permission requests carry a separate generation so room/session cleanup also stops streams that resolve after cleanup.
+
 The development identity provider is a separate loopback-only process. It exercises discovery, authorization, code exchange, PKCE and signed ID tokens. It offers named test identities, not actual account authentication, and cannot be used with production configuration.
 
 ## Primary references

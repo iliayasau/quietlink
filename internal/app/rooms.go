@@ -34,6 +34,9 @@ func (rm *room) member(ss *session) *member {
 	}
 	return nil
 }
+func (rm *room) hasIdentity(who identity) bool {
+	return rm.Host.Identity == who || (rm.Guest != nil && rm.Guest.Identity == who) || (rm.Pending != nil && rm.Pending.Identity == who)
+}
 func (s *Server) closeMember(m *member) {
 	if m != nil && m.Peer != nil {
 		m.Peer.cancel()
@@ -80,7 +83,7 @@ func (s *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, rm := range s.rooms {
-		if rm.member(ss) != nil || (rm.Pending != nil && rm.Pending.Session == ss.ID) {
+		if rm.hasIdentity(ss.Identity) {
 			fail(w, 409, "Leave your current room first.")
 			return
 		}
@@ -121,7 +124,7 @@ func (s *Server) joinRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, other := range s.rooms {
-		if other.member(ss) != nil || (other.Pending != nil && other.Pending.Session == ss.ID) {
+		if other.hasIdentity(ss.Identity) {
 			fail(w, 409, "Leave your current room first.")
 			return
 		}

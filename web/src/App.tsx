@@ -76,12 +76,14 @@ export function App() {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mounted = useRef(true);
+  const mediaGeneration = useRef(0);
   const [mic, setMic] = useState(true);
   const [camera, setCamera] = useState(true);
   const [attempt, setAttempt] = useState(0);
   const ice = useMemo(() => account?.iceServers ?? [], [account]);
   const call = useCall(room, stream, ice, attempt);
   const stopMedia = () => {
+    mediaGeneration.current++;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setStream(null);
@@ -98,6 +100,7 @@ export function App() {
     void loadAccount();
     return () => {
       mounted.current = false;
+      mediaGeneration.current++;
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
@@ -209,6 +212,7 @@ export function App() {
     }
   }
   async function preview() {
+    const generation = ++mediaGeneration.current;
     await run(async () => {
       if (!navigator.mediaDevices?.getUserMedia)
         throw new Error(
@@ -223,15 +227,17 @@ export function App() {
           },
           audio: { echoCancellation: true, noiseSuppression: true },
         });
-        if (!mounted.current) {
+        if (!mounted.current || generation !== mediaGeneration.current) {
           media.getTracks().forEach((track) => track.stop());
           return;
         }
+        streamRef.current?.getTracks().forEach((track) => track.stop());
         streamRef.current = media;
         setStream(media);
         setMic(true);
         setCamera(true);
       } catch {
+        if (!mounted.current || generation !== mediaGeneration.current) return;
         throw new Error(
           "Camera or microphone unavailable. Allow access in your browser, close other camera apps, then try again.",
         );

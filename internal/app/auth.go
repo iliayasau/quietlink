@@ -3,7 +3,10 @@ package app
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
+	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -12,8 +15,70 @@ import (
 )
 
 func equal(a, b string) bool { return a != "" && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
+func (s *Server) cookieName(name string) string {
+	if strings.HasPrefix(s.cfg.Origin, "https://") {
+		return "__Host-" + name
+	}
+	return name
+}
+
+// Never select the first of multiple same-name cookies supplied by the browser.
+func (s *Server) requestCookie(r *http.Request, name string) (*http.Cookie, error) {
+	var found *http.Cookie
+	for _, c := range r.Cookies() {
+		if c.Name != s.cookieName(name) {
+			continue
+		}
+		if found != nil {
+			return nil, errors.New("ambiguous cookie")
+		}
+		found = c
+	}
+	if found == nil {
+		return nil, http.ErrNoCookie
+	}
+	return found, nil
+}
 func (s *Server) cookie(w http.ResponseWriter, name, value string, age int) {
-	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/", MaxAge: age, HttpOnly: true, Secure: strings.HasPrefix(s.cfg.Origin, "https://"), SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: s.cookieName(name), Value: value, Path: "/", MaxAge: age, HttpOnly: true, Secure: strings.HasPrefix(s.cfg.Origin, "https://"), SameSite: http.SameSiteLaxMode})
+}
+
+// Only the transport peer is trusted. IPv6 clients share a /64 quota.
+func loginSource(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return "unknown"
+	}
+	addr = addr.Unmap().WithZone("")
+	if addr.Is6() {
+		return netip.PrefixFrom(addr, 64).Masked().String()
+	}
+	return addr.String()
+}
+
+// Caller holds mu. Fixed windows and a capped map bound both work and memory.
+func (s *Server) allowLogin(r *http.Request) bool {
+	if s.loginLimits == nil {
+		s.loginLimits = make(map[string]loginLimit)
+	}
+	key := loginSource(r)
+	limit, ok := s.loginLimits[key]
+	if !ok {
+		if len(s.loginLimits) >= 2048 {
+			return false
+		}
+		limit.Expires = s.now().Add(5 * time.Minute)
+	}
+	if limit.Count >= 60 {
+		return false
+	}
+	limit.Count++
+	s.loginLimits[key] = limit
+	return true
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
@@ -21,16 +86,22 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "Start sign-in from QuietLink.")
 		return
 	}
+	old, err := s.requestCookie(r, "ql_login")
+	if err != nil && err != http.ErrNoCookie {
+		fail(w, 400, "Ambiguous sign-in cookie.")
+		return
+	}
 	s.mu.Lock()
 	s.clean()
-	if len(s.transactions) >= 1000 {
+	if !s.allowLogin(r) || len(s.transactions) >= 1000 {
 		s.mu.Unlock()
+		w.Header().Set("Retry-After", "300")
 		fail(w, 429, "Sign-in is busy. Try again shortly.")
 		return
 	}
 	key := opaque()
 	tx := transaction{opaque(), opaque(), oauth2.GenerateVerifier(), s.now().Add(5 * time.Minute)}
-	if old, err := r.Cookie("ql_login"); err == nil {
+	if old != nil {
 		delete(s.transactions, old.Value)
 	}
 	s.transactions[key] = tx
@@ -40,9 +111,14 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
-	c, err := r.Cookie("ql_login")
+	c, err := s.requestCookie(r, "ql_login")
 	if err != nil {
 		fail(w, 400, "Sign-in expired. Start again.")
+		return
+	}
+	old, err := s.requestCookie(r, "ql_session")
+	if err != nil && err != http.ErrNoCookie {
+		fail(w, 400, "Ambiguous session cookie.")
 		return
 	}
 	s.mu.Lock()
@@ -88,24 +164,46 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 	ss := &session{opaque(), identity{id.Issuer, id.Subject}, claims.Name, opaque(), s.now().Add(8 * time.Hour)}
 	s.mu.Lock()
 	s.clean()
-	if len(s.sessions) >= 2000 {
+	oldID := ""
+	if old != nil {
+		oldID = old.Value
+	}
+	if !s.storeSession(ss, oldID) {
 		s.mu.Unlock()
 		fail(w, 503, "QuietLink is at capacity. Try again later.")
 		return
 	}
-	if old, err := r.Cookie("ql_session"); err == nil {
-		s.revoke(old.Value)
-	}
-	s.sessions[ss.ID] = ss
 	s.mu.Unlock()
 	s.cookie(w, "ql_session", ss.ID, 8*3600)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// Caller holds mu. A fresh browser cannot bypass the identity's session quota.
+func (s *Server) storeSession(ss *session, oldID string) bool {
+	count, total := 0, len(s.sessions)
+	for id, existing := range s.sessions {
+		if id == oldID {
+			total--
+			continue
+		}
+		if existing.Identity == ss.Identity {
+			count++
+		}
+	}
+	if count >= 5 || total >= 2000 {
+		return false
+	}
+	if oldID != "" {
+		s.revoke(oldID)
+	}
+	s.sessions[ss.ID] = ss
+	return true
+}
+
 // Call while holding mu; returned sessions must not escape the lock for mutation.
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request, mutation bool) *session {
 	s.clean()
-	c, err := r.Cookie("ql_session")
+	c, err := s.requestCookie(r, "ql_session")
 	if err != nil || s.sessions[c.Value] == nil {
 		fail(w, 401, "Your session ended. Sign in again.")
 		return nil

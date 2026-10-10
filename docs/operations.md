@@ -2,7 +2,7 @@
 
 ## Local development
 
-Install Go 1.27.1+ and Node.js 24+. From the repository root:
+Install Go 1.27.2+ and Node.js 24+. From the repository root:
 
 ```sh
 npm ci
@@ -37,6 +37,8 @@ The race detector needs a supported C toolchain. Browser tests start the real Go
 Register an app with your existing OIDC provider. Set its callback to `https://your-host/auth/callback`, enable authorization code with PKCE S256, and allow `openid profile`. Configure APP_ENV=production, APP_ORIGIN (HTTPS, no trailing slash), OIDC_ISSUER, OIDC_CLIENT_ID and OIDC_CLIENT_SECRET where required. Supported ID-token signatures are RS256 and ES256. Never commit secrets.
 
 Build the frontend and run `go build -o bin/quietlink ./cmd/quietlink`. Run the resulting binary from the repository root so web/dist is available. Place the backend behind a trusted TLS reverse proxy supporting WebSocket upgrades and idle timeouts longer than the 20-second heartbeat. Restrict backend access to the proxy. LISTEN_ADDR defaults to 127.0.0.1:8080; set explicitly for containers. Run one instance. Do not use the development launcher or fixture in production.
+
+Login throttling uses only the backend TCP peer (IPv4 address or IPv6 /64): 60 starts per five-minute window. All users behind the same proxy share that budget. Apply per-client rate limits at the edge using its verified connection metadata and assess this shared capacity before deployment. QuietLink does not trust X-Forwarded-For or Forwarded. HTTPS login/session cookies use the `__Host-` prefix; older unprefixed cookies require a fresh sign-in. Up to five sessions per OIDC identity are allowed, but only one can occupy a room at a time. Sign out of unused sessions or wait for their eight-hour expiry.
 
 ## Optional TURN
 

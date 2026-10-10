@@ -31,7 +31,8 @@ export function useCall(
       timeout: ReturnType<typeof setTimeout>;
     let candidates: RTCIceCandidateInit[] = [];
     let epoch = 0;
-    let chain = Promise.resolve();
+    let socketGeneration = 0;
+    let discardSocketWork = () => {};
     const reset = () => {
       clearTimeout(timeout);
       if (pc) {
@@ -83,39 +84,40 @@ export function useCall(
       }, 20000);
       return current;
     };
-    const receive = async (message: Signal) => {
-      if (stopped) return;
-      if (message.type === "reset") {
-        if (!message.epoch || message.epoch <= epoch) return;
-        epoch = message.epoch;
-        reset();
-        setState("Waiting for the other person");
-        if (room.role === "guest") {
-          create();
-          send({ type: "ready" });
-        }
-      } else if (message.epoch !== epoch) {
-        return;
-      } else if (message.type === "ready" && room.role === "host" && !pc) {
+    const receive = async (message: Signal, valid: () => boolean) => {
+      if (!valid()) return;
+      if (message.type === "ready" && room.role === "host" && !pc) {
         const current = (pc = create());
         const offer = await current.createOffer();
-        if (pc !== current) return;
+        if (!valid() || pc !== current) return;
         await current.setLocalDescription(offer);
-        if (pc !== current || stopped) return;
+        if (!valid() || pc !== current) return;
         send({ type: "offer", sdp: offer.sdp });
       } else if (message.type === "offer" && room.role === "guest") {
         const current = pc ?? create();
         await current.setRemoteDescription({ type: "offer", sdp: message.sdp });
-        for (const candidate of candidates)
+        if (!valid() || pc !== current) return;
+        for (const candidate of candidates) {
           await current.addIceCandidate(candidate);
+          if (!valid() || pc !== current) return;
+        }
         candidates = [];
         const answer = await current.createAnswer();
+        if (!valid() || pc !== current) return;
         await current.setLocalDescription(answer);
-        if (pc !== current || stopped) return;
+        if (!valid() || pc !== current) return;
         send({ type: "answer", sdp: answer.sdp });
       } else if (message.type === "answer" && room.role === "host" && pc) {
-        await pc.setRemoteDescription({ type: "answer", sdp: message.sdp });
-        for (const candidate of candidates) await pc.addIceCandidate(candidate);
+        const current = pc;
+        await current.setRemoteDescription({
+          type: "answer",
+          sdp: message.sdp,
+        });
+        if (!valid() || pc !== current) return;
+        for (const candidate of candidates) {
+          await current.addIceCandidate(candidate);
+          if (!valid() || pc !== current) return;
+        }
         candidates = [];
       } else if (message.type === "candidate" && message.candidate) {
         if (pc?.remoteDescription) await pc.addIceCandidate(message.candidate);
@@ -124,20 +126,83 @@ export function useCall(
     };
     const connect = () => {
       if (stopped) return;
+      const generation = ++socketGeneration;
+      epoch = 0;
+      const queue: Signal[] = [];
+      let processing = false;
       setState(retries ? "Reconnecting" : "Opening the room");
-      ws = new WebSocket(
+      const socket = new WebSocket(
         `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/rooms/${room.id}/signal`,
       );
-      ws.onmessage = (event) => {
-        chain = chain
-          .then(() => receive(JSON.parse(event.data) as Signal))
-          .catch(() => {
-            if (!stopped) setState("Could not connect. Please retry.");
-          });
+      ws = socket;
+      const active = () =>
+        !stopped &&
+        socketGeneration === generation &&
+        socket.readyState === WebSocket.OPEN;
+      const drain = async () => {
+        if (processing) return;
+        processing = true;
+        try {
+          while (active() && queue.length) {
+            const message = queue.shift()!;
+            const valid = () => active() && message.epoch === epoch;
+            try {
+              await receive(message, valid);
+            } catch {
+              if (valid()) setState("Could not connect. Please retry.");
+            }
+          }
+        } finally {
+          processing = false;
+        }
       };
-      ws.onclose = (event) => {
+      const invalidate = () => {
+        socketGeneration++;
+        queue.length = 0;
         reset();
-        if (stopped) return;
+      };
+      discardSocketWork = invalidate;
+      socket.onmessage = (event) => {
+        if (!active()) return;
+        let message: Signal;
+        try {
+          if (typeof event.data !== "string" || event.data.length > 65536)
+            throw new Error("invalid message");
+          message = JSON.parse(event.data) as Signal;
+          if (!message || !Number.isSafeInteger(message.epoch))
+            throw new Error("invalid epoch");
+        } catch {
+          invalidate();
+          socket.close(1000, "Invalid signaling message");
+          setState("Connection ended. Retry to reconnect.");
+          return;
+        }
+        // Reset is a cancellation boundary, not an item behind negotiation work.
+        if (message.type === "reset") {
+          if (!message.epoch || message.epoch <= epoch) return;
+          epoch = message.epoch;
+          queue.length = 0;
+          reset();
+          setState("Waiting for the other person");
+          if (room.role === "guest") {
+            create();
+            send({ type: "ready" });
+          }
+          return;
+        }
+        if (message.epoch !== epoch) return;
+        if (queue.length >= 32) {
+          invalidate();
+          socket.close(1000, "Signaling queue full");
+          setState("Connection ended. Retry to reconnect.");
+          return;
+        }
+        queue.push(message);
+        void drain();
+      };
+      socket.onclose = (event) => {
+        if (stopped || socketGeneration !== generation) return;
+        invalidate();
         if (event.code === 1008 || ++retries > 5) {
           setState("Connection ended. Retry to reconnect.");
           return;
@@ -149,11 +214,11 @@ export function useCall(
     connect();
     return () => {
       stopped = true;
+      discardSocketWork();
       clearTimeout(retry);
       clearTimeout(timeout);
       ws.onclose = null;
       ws.close();
-      reset();
     };
   }, [room?.id, room?.role, room?.status, stream, ice, attempt]);
   return { remote, state };
