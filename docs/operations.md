@@ -40,6 +40,8 @@ Build the frontend and run `go build -o bin/quietlink ./cmd/quietlink`. Run the 
 
 Login throttling uses only the backend TCP peer (IPv4 address or IPv6 /64): 60 starts per five-minute window. All users behind the same proxy share that budget. Apply per-client rate limits at the edge using its verified connection metadata and assess this shared capacity before deployment. QuietLink does not trust X-Forwarded-For or Forwarded. HTTPS login/session cookies use the `__Host-` prefix; older unprefixed cookies require a fresh sign-in. Up to five sessions per OIDC identity are allowed, but only one can occupy a room at a time. Sign out of unused sessions or wait for their eight-hour expiry.
 
+**Production deployment is blocked if the backend source identity is shared or untrusted and there is no verified protection at the edge.** Do not deploy that topology until the trusted edge applies per-client abuse controls, backend bypass is prevented, and shared-budget exhaustion has been tested. One client can otherwise consume the shared proxy login quota and deny sign-in to others. These application limits are not complete DoS protection. This source change does not configure or validate any production proxy.
+
 ## Optional TURN
 
 ICE_SERVERS accepts JSON RTCIceServer objects, for example:

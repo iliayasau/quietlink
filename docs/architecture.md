@@ -14,6 +14,8 @@ The host initiates offers. A guest sends ready after installing handlers. Reconn
 
 Client signaling uses a bounded per-socket queue and checks both socket generation and negotiation epoch after asynchronous work. A reset immediately invalidates old work and clears queued messages, even during a pending browser negotiation call. A closed socket cannot create a later peer through a queued offer. Camera permission requests carry a separate generation so room/session cleanup also stops streams that resolve after cleanup.
 
+Within each socket, a reset replaces the negotiation queue and its processing flag. New work does not await the closed peer's browser promises, which may never settle. Old drains capture their own queue; their finally blocks cannot change the new epoch's processing state.
+
 The development identity provider is a separate loopback-only process. It exercises discovery, authorization, code exchange, PKCE and signed ID tokens. It offers named test identities, not actual account authentication, and cannot be used with production configuration.
 
 ## Primary references

@@ -16,7 +16,7 @@ Environment: Windows amd64, Node.js 24.19.0, npm 12.2.0, Go 1.27.2, Chromium 153
 | `npm run lint` | Passed |
 | `npm run typecheck` | Passed |
 | `npm run build` | Passed |
-| Playwright suite | 17 passed, including five new lifecycle regressions |
+| Playwright suite | 19 passed, including seven lifecycle regressions |
 | `govulncheck` v1.8.0 on Go 1.27.2 | Passed; no vulnerabilities found |
 | Git history and working-source secret scan | No matches for the checked patterns; see scope below |
 | `git diff --check` | Passed |
@@ -25,6 +25,8 @@ The initial Go 1.27.1 scan reported 12 reachable standard-library vulnerabilitie
 
 The secret scan examined every unique blob reachable from all 13 baseline commits (82 blobs), commit messages and nonignored working source files. Checks covered private-key blocks, common provider-token formats, JWTs, credential-bearing HTTP URLs, long literal credential assignments and sensitive filenames. Binary files were excluded from text matching. No secret values were printed. This heuristic check is not a guarantee that no secret exists, and should be complemented by the owner's chosen scanning service before publication.
 
-Browser tests use fake media. Call/recovery tests run against the real local Go server and OIDC fixture; the five lifecycle cases deliberately control HTTP and browser APIs to test delayed permission/negotiation, socket close/reset and queue overflow. They do not establish real-provider, real-device, HTTPS or cross-network TURN readiness.
+Browser tests use fake media. Call/recovery tests run against the real local Go server and OIDC fixture; the seven lifecycle cases deliberately control HTTP and browser APIs to test delayed permission/negotiation, socket close/reset and queue overflow. They do not establish real-provider, real-device, HTTPS or cross-network TURN readiness.
+
+The same-socket reset follow-up was first reproduced against the `fffd12f` build: the pending-reset regression failed after 15 seconds with two expected remote-description calls and only one observed. After isolating each epoch's queue and processing flag, the new epoch negotiates while the first promise remains pending forever. A separate late-reset case releases the old promise while the new drain is busy and verifies it cannot unlock that drain or run another queued offer concurrently. Go unit/vet and frontend lint/typecheck/build were rerun for the follow-up; dependencies did not change.
 
 These local results do not include Linux race execution; consult the exact commit's GitHub Actions checks for that result. The owner authorized publication of this branch to the existing private repository and its CI run. A project license, private security-reporting channel, public release and deployment acceptance remain owner decisions; see [release checklist](release.md).

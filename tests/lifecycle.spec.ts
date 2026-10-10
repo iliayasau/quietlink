@@ -30,6 +30,7 @@ declare global {
       message: (type: string, epoch?: number) => void;
       close: () => void;
       release: () => void;
+      releaseOld: () => void;
       created: number;
       descriptions: number;
       answers: number;
@@ -86,7 +87,13 @@ for (const status of [404, 401]) {
   });
 }
 
-for (const boundary of ["close", "reset", "overflow"] as const) {
+for (const boundary of [
+  "close",
+  "reset",
+  "overflow",
+  "pending-reset",
+  "late-reset",
+] as const) {
   test(`delayed negotiation discards stale work on ${boundary}`, async ({
     page,
   }) => {
@@ -96,6 +103,7 @@ for (const boundary of ["close", "reset", "overflow"] as const) {
         message: (_type: string, _epoch = 1) => {},
         close: () => {},
         release: () => {},
+        releaseOld: () => {},
         created: 0,
         descriptions: 0,
         answers: 0,
@@ -165,11 +173,13 @@ for (const boundary of ["close", "reset", "overflow"] as const) {
       .toBe(1);
     await page.evaluate((boundary) => {
       const h = window.signalTest;
+      h.releaseOld = h.release;
       h.message("offer"); // Queued behind the unresolved remote description.
       if (boundary === "close") h.close();
-      else if (boundary === "reset") h.message("reset", 2);
+      else if (boundary !== "overflow") h.message("reset", 2);
       else for (let i = 0; i < 40; i++) h.message("offer");
-      h.release();
+      if (boundary !== "pending-reset" && boundary !== "late-reset")
+        h.release();
     }, boundary);
     // Flush the continuation through a browser task before checking no stale work ran.
     await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
@@ -180,11 +190,11 @@ for (const boundary of ["close", "reset", "overflow"] as const) {
         answers: window.signalTest.answers,
       })),
     ).toEqual({
-      created: boundary === "reset" ? 2 : 1,
+      created: boundary === "close" || boundary === "overflow" ? 1 : 2,
       descriptions: 1,
       answers: 0,
     });
-    if (boundary !== "reset") {
+    if (boundary === "close" || boundary === "overflow") {
       expect(await page.evaluate(() => window.signalTest.closed)).toBe(1);
       await expect(page.locator(".connection-label")).toHaveText(
         "Connection ended. Retry to reconnect.",
@@ -194,6 +204,21 @@ for (const boundary of ["close", "reset", "overflow"] as const) {
       await expect
         .poll(() => page.evaluate(() => window.signalTest.descriptions))
         .toBe(2);
+      // In pending-reset the first promise is never released, even at teardown.
+      if (boundary === "late-reset") {
+        await page.evaluate(() => window.signalTest.releaseOld());
+        await page.evaluate(
+          () => new Promise((resolve) => setTimeout(resolve, 0)),
+        );
+        await page.evaluate(() => window.signalTest.message("offer", 2));
+        await page.evaluate(
+          () => new Promise((resolve) => setTimeout(resolve, 0)),
+        );
+        // The old drain's finally must not unlock the active epoch's drain.
+        expect(await page.evaluate(() => window.signalTest.descriptions)).toBe(
+          2,
+        );
+      }
       await page.evaluate(() => window.signalTest.release());
       await expect
         .poll(() => page.evaluate(() => window.signalTest.answers))
@@ -206,6 +231,15 @@ for (const boundary of ["close", "reset", "overflow"] as const) {
             .map((m) => m.epoch),
         ),
       ).toEqual([2]);
+      if (boundary === "late-reset") {
+        await expect
+          .poll(() => page.evaluate(() => window.signalTest.descriptions))
+          .toBe(3);
+        await page.evaluate(() => window.signalTest.release());
+        await expect
+          .poll(() => page.evaluate(() => window.signalTest.answers))
+          .toBe(2);
+      }
     }
   });
 }

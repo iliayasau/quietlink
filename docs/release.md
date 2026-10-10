@@ -12,7 +12,7 @@
 ## Deployment acceptance (not established by source tests)
 
 - Configure and verify a real OIDC provider, exact redirect URI, issuer and signing algorithms.
-- Verify HTTPS, host-prefixed cookies, proxy WebSocket support, redacted logs and edge limits. Test the shared backend login budget described in operations.
+- Verify HTTPS, host-prefixed cookies, proxy WebSocket support, redacted logs and edge limits. Do not deploy with shared or untrusted source identity without verified edge abuse protection and backend isolation. Test exhaustion of the shared backend login budget described in operations.
 - Provide and verify a quota-controlled TURN service if required; credentials and paid resources need operator decisions.
 - Test real camera/microphone devices and two separate networks, forced relay, and TCP/TLS fallback.
 - Perform manual accessibility checks and review operational monitoring and incident handling.

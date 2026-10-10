@@ -6,6 +6,7 @@ type Signal = {
   sdp?: string;
   candidate?: RTCIceCandidateInit;
 };
+type NegotiationQueue = { messages: Signal[]; processing: boolean };
 
 export function useCall(
   room: Room | null,
@@ -128,8 +129,13 @@ export function useCall(
       if (stopped) return;
       const generation = ++socketGeneration;
       epoch = 0;
-      const queue: Signal[] = [];
-      let processing = false;
+      let queue: NegotiationQueue = { messages: [], processing: false };
+      const discardQueue = () => {
+        queue.messages.length = 0;
+        // Closing a peer need not settle its outstanding browser promises.
+        // Each epoch owns its drain, including the processing flag in finally.
+        queue = { messages: [], processing: false };
+      };
       setState(retries ? "Reconnecting" : "Opening the room");
       const socket = new WebSocket(
         `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/rooms/${room.id}/signal`,
@@ -139,13 +145,14 @@ export function useCall(
         !stopped &&
         socketGeneration === generation &&
         socket.readyState === WebSocket.OPEN;
-      const drain = async () => {
-        if (processing) return;
-        processing = true;
+      const drain = async (current: NegotiationQueue) => {
+        if (current.processing) return;
+        current.processing = true;
         try {
-          while (active() && queue.length) {
-            const message = queue.shift()!;
-            const valid = () => active() && message.epoch === epoch;
+          while (active() && queue === current && current.messages.length) {
+            const message = current.messages.shift()!;
+            const valid = () =>
+              active() && queue === current && message.epoch === epoch;
             try {
               await receive(message, valid);
             } catch {
@@ -153,12 +160,12 @@ export function useCall(
             }
           }
         } finally {
-          processing = false;
+          current.processing = false;
         }
       };
       const invalidate = () => {
         socketGeneration++;
-        queue.length = 0;
+        discardQueue();
         reset();
       };
       discardSocketWork = invalidate;
@@ -181,7 +188,7 @@ export function useCall(
         if (message.type === "reset") {
           if (!message.epoch || message.epoch <= epoch) return;
           epoch = message.epoch;
-          queue.length = 0;
+          discardQueue();
           reset();
           setState("Waiting for the other person");
           if (room.role === "guest") {
@@ -191,14 +198,14 @@ export function useCall(
           return;
         }
         if (message.epoch !== epoch) return;
-        if (queue.length >= 32) {
+        if (queue.messages.length >= 32) {
           invalidate();
           socket.close(1000, "Signaling queue full");
           setState("Connection ended. Retry to reconnect.");
           return;
         }
-        queue.push(message);
-        void drain();
+        queue.messages.push(message);
+        void drain(queue);
       };
       socket.onclose = (event) => {
         if (stopped || socketGeneration !== generation) return;
